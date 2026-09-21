@@ -14,9 +14,8 @@ const defaultR1Form = {
   explanation: "",
   time_limit_seconds: 30,
   base_points: 1000,
+  question_type: "single" as "single" | "multi",
   options: [
-    { option_text: "", is_correct: true },
-    { option_text: "", is_correct: false },
     { option_text: "", is_correct: false },
     { option_text: "", is_correct: false },
   ],
@@ -88,6 +87,7 @@ export default function AdminQuestionsPage() {
       explanation: q.explanation || "",
       time_limit_seconds: q.time_limit_seconds,
       base_points: q.base_points,
+      question_type: q.question_type || "single",
       options: (q.options || []).map(o => ({ option_text: o.option_text, is_correct: Boolean(o.is_correct) })),
     });
     setR1ModalOpen(true);
@@ -111,9 +111,18 @@ export default function AdminQuestionsPage() {
     if (!r1Form.question_text.trim() || r1Form.question_text.length < 10) {
       showToast("Question text must be at least 10 characters.", "error"); return;
     }
-    if (r1Form.options.some(o => !o.option_text.trim())) {
-      showToast("All 4 options must be filled in.", "error"); return;
+    if (r1Form.options.length < 2) {
+      showToast("Please provide at least 2 options.", "error"); return;
     }
+    if (r1Form.options.some(o => !o.option_text.trim())) {
+      showToast("All options must be filled in.", "error"); return;
+    }
+    const correctCount = r1Form.options.filter(o => o.is_correct).length;
+    if (correctCount < 1) {
+      showToast("Please mark at least one option as correct.", "error"); return;
+    }
+    const question_type = correctCount > 1 ? "multi" : "single";
+    r1Form.question_type = question_type;
     setSubmittingR1(true);
     try {
       const method = r1EditTarget ? "PATCH" : "POST";
@@ -199,7 +208,7 @@ export default function AdminQuestionsPage() {
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       {toast && (
-        <div className="fixed bottom-5 right-5 z-50 px-4 py-3 rounded-lg shadow-xl text-sm font-medium text-white"
+        <div className="fixed bottom-5 right-5 z-[100] px-4 py-3 rounded-lg shadow-xl text-sm font-medium text-white"
           style={{ background: toast.type === "success" ? "#16a34a" : "#dc2626" }}>
           {toast.message}
         </div>
@@ -369,12 +378,22 @@ export default function AdminQuestionsPage() {
                 </div>
               </div>
               <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-600 uppercase">Options — select the correct one</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-slate-600 uppercase">Options — select correct ones</label>
+                  <button type="button" className="btn btn-sm btn-outline text-xs flex items-center gap-1"
+                    onClick={() => setR1Form({ ...r1Form, options: [...r1Form.options, { option_text: "", is_correct: false }] })}>
+                    <Plus size={12} /> Add Option
+                  </button>
+                </div>
                 {r1Form.options.map((opt, i) => (
                   <div key={i} className="flex items-center gap-3">
-                    <input type="radio" name="correct_option" checked={opt.is_correct}
-                      onChange={() => setR1Form({ ...r1Form, options: r1Form.options.map((o, idx) => ({ ...o, is_correct: idx === i })) })}
-                      className="w-4 h-4 text-indigo-600" />
+                    <input type="checkbox" checked={opt.is_correct}
+                      onChange={(e) => {
+                        const newOpts = [...r1Form.options];
+                        newOpts[i].is_correct = e.target.checked;
+                        setR1Form({ ...r1Form, options: newOpts });
+                      }}
+                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" />
                     <span className="font-mono text-xs font-bold text-slate-500 w-5">{String.fromCharCode(65 + i)}</span>
                     <input type="text" className="input flex-1 p-2 border rounded-lg text-sm"
                       placeholder={`Option ${String.fromCharCode(65 + i)}`}
@@ -383,6 +402,15 @@ export default function AdminQuestionsPage() {
                         newOpts[i] = { ...newOpts[i], option_text: e.target.value };
                         setR1Form({ ...r1Form, options: newOpts });
                       }} />
+                    {r1Form.options.length > 2 && (
+                      <button type="button" onClick={() => {
+                        const newOpts = [...r1Form.options];
+                        newOpts.splice(i, 1);
+                        setR1Form({ ...r1Form, options: newOpts });
+                      }} className="p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500 rounded">
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>

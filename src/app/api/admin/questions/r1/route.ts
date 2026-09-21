@@ -20,8 +20,8 @@ function validateQuestion(data: Partial<Round1Question>): string | null {
   if (!data.question_text?.trim() || data.question_text.trim().length < 10) {
     return "Question text must be at least 10 characters.";
   }
-  if (!data.options || data.options.length < 2 || data.options.length > 4) {
-    return "Questions must have between 2 and 4 answer options.";
+  if (!data.options || data.options.length < 2) {
+    return "Questions must have at least 2 answer options.";
   }
   for (const opt of data.options) {
     if (!opt.option_text?.trim() || opt.option_text.trim().length < 1) {
@@ -33,8 +33,8 @@ function validateQuestion(data: Partial<Round1Question>): string | null {
     }
   }
   const correctOptions = data.options.filter((o) => o.is_correct);
-  if (correctOptions.length !== 1) {
-    return "Exactly one correct answer must be selected.";
+  if (correctOptions.length < 1) {
+    return "At least one correct answer must be selected.";
   }
   if (!data.time_limit_seconds || data.time_limit_seconds < 5) {
     return "Time limit must be at least 5 seconds.";

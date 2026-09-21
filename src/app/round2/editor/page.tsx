@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
-  Play, Send, ArrowLeft, ChevronDown, CheckCircle2, XCircle,
+  Play, Send, ChevronLeft, ChevronRight, ChevronDown, CheckCircle2, XCircle,
   Clock, Cpu, MemoryStick, AlertTriangle, Loader2, Code2,
-  FileCode, Terminal, RotateCcw, Eye, EyeOff, Lock
+  FileCode, Terminal, RotateCcw, Eye, EyeOff, Lock, Trophy
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import ProctorGuard from "@/components/ProctorGuard";
@@ -80,6 +80,8 @@ interface Problem {
   order_index: number;
   starter_code: Record<string, string>;
   test_cases: TestCaseView[];
+  best_score?: number;
+  best_status?: string | null;
 }
 
 function EditorContent() {
@@ -95,6 +97,8 @@ function EditorContent() {
   const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [teamId, setTeamId] = useState("");
   const [violationNotice, setViolationNotice] = useState<string | null>(null);
+  const [roundInfo, setRoundInfo] = useState<{started_at: string, duration_minutes: number} | null>(null);
+  const [remainingMs, setRemainingMs] = useState(0);
 
   // Panels
   const [activePanel, setActivePanel] = useState<"description" | "testcases">("description");
@@ -110,11 +114,6 @@ function EditorContent() {
   // Load problem data
   useEffect(() => {
     async function load() {
-      if (!problemId) {
-        router.replace("/round2/start");
-        return;
-      }
-
       try {
         const meRes = await fetch("/api/auth/me").then((r) => r.json());
         if (!meRes.authenticated || meRes.role !== "team") {
@@ -132,7 +131,21 @@ function EditorContent() {
         const probs: Problem[] = res.problems || [];
         setAllProblems(probs);
 
-        const target = probs.find((p: Problem) => p.id === problemId);
+        if (res.round && res.round.started_at) {
+          setRoundInfo(res.round);
+          const start = new Date(res.round.started_at).getTime();
+          const duration = res.round.duration_minutes * 60 * 1000;
+          const elapsed = Date.now() - start;
+          setRemainingMs(Math.max(0, duration - elapsed));
+        }
+
+        let target = probs.find((p: Problem) => p.id === problemId);
+        if (!target && probs.length > 0) {
+          target = probs[0];
+          router.replace(`/round2/editor?problem=${target.id}`);
+          return;
+        }
+
         if (!target) {
           router.replace("/round2/start");
           return;
@@ -240,6 +253,24 @@ function EditorContent() {
     }
   }, [problem, code, language, isSubmitting]);
 
+  // Timer Countdown Effect (placed after handleSubmit to avoid use-before-declaration)
+  useEffect(() => {
+    if (!roundInfo || remainingMs <= 0) return;
+    const interval = setInterval(() => {
+      const start = new Date(roundInfo.started_at).getTime();
+      const duration = roundInfo.duration_minutes * 60 * 1000;
+      const elapsed = Date.now() - start;
+      const remaining = Math.max(0, duration - elapsed);
+      setRemainingMs(remaining);
+      if (remaining <= 0) {
+        clearInterval(interval);
+        handleSubmit();
+        router.replace("/round2/summary");
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [roundInfo, remainingMs, handleSubmit, router]);
+
   // Keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -306,7 +337,7 @@ function EditorContent() {
   if (!problem) return null;
 
   return (
-    <div className="h-screen flex flex-col participant-protected" style={{ background: "var(--color-bg)" }}>
+    <div className={`h-screen flex flex-col participant-protected ${remainingMs > 0 && remainingMs <= 5000 ? "animate-pulse border-[12px] border-red-600 box-border" : ""}`} style={{ background: "var(--color-bg)" }}>
       {/* Proctoring Guard */}
       {teamId && <ProctorGuard teamId={teamId} roundId={2} onViolation={handleViolation} />}
 
@@ -318,61 +349,117 @@ function EditorContent() {
         </div>
       )}
 
-      {/* Top Toolbar */}
+      {/* Premium Top Toolbar */}
       <div
-        className="flex items-center justify-between px-4 py-2 border-b shrink-0"
+        className="flex items-center justify-between px-5 shrink-0 z-10 shadow-md"
         style={{
-          background: "var(--color-palette-espresso)",
-          borderColor: "var(--color-palette-burgundy)",
-          color: "var(--color-text-inverse)",
+          background: "linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #312e81 100%)",
+          minHeight: "64px",
+          borderBottom: "1px solid rgba(255,255,255,0.08)",
         }}
       >
-        <div className="flex items-center gap-3">
-          <Link
-            href="/round2/start"
-            className="text-xs font-semibold flex items-center gap-1.5 transition-colors hover:opacity-80"
-            style={{ color: "rgba(255,255,255,0.7)" }}
-          >
-            <ArrowLeft size={14} /> Problems
-          </Link>
-          <span className="text-white/30">|</span>
-          <h1 className="text-sm font-bold truncate max-w-[300px]">
-            #{problem.order_index} {problem.title}
-          </h1>
-          <span
-            className="text-[10px] font-extrabold tracking-wider px-1.5 py-0.5 rounded"
-            style={{
-              ...getDifficultyStyle(problem.difficulty),
-              background: "rgba(255,255,255,0.1)",
-            }}
-          >
-            {problem.difficulty.toUpperCase()}
-          </span>
-        </div>
+        {/* LEFT: prev/next + problem boxes + title */}
+        <div className="flex items-center gap-3 min-w-0">
+          {/* Prev Problem */}
+          {allProblems.length > 1 && (() => {
+            const curIdx = allProblems.findIndex(p => p.id === problem.id);
+            const prev = curIdx > 0 ? allProblems[curIdx - 1] : null;
+            return (
+              <button
+                disabled={!prev}
+                onClick={() => prev && router.push(`/round2/editor?problem=${prev.id}`)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all shrink-0 disabled:opacity-30 hover:bg-white/10 border border-white/20 text-white"
+                title={prev ? `Problem ${prev.order_index}: ${prev.title}` : 'No previous problem'}
+              >
+                <ChevronLeft size={18} />
+              </button>
+            );
+          })()}
 
-        <div className="flex items-center gap-2">
-          {/* Problem Navigator */}
-          {allProblems.length > 1 && (
-            <div className="flex items-center gap-1">
-              {allProblems.map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => router.push(`/round2/editor?problem=${p.id}`)}
-                  className={`w-7 h-7 rounded text-[10px] font-bold transition-all ${
-                    p.id === problem.id
-                      ? "bg-white/20 text-white"
-                      : "bg-white/5 text-white/50 hover:bg-white/10"
-                  }`}
-                >
-                  {p.order_index}
-                </button>
-              ))}
+          {/* Problem Navigator boxes */}
+          {allProblems.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              {allProblems.map((p) => {
+                let boxStyle = "bg-white/10 text-white/80 hover:bg-white/20 border-white/20";
+                if (p.best_status === "ACCEPTED") boxStyle = "bg-emerald-500 text-white border-emerald-400 shadow-md";
+                else if (p.best_status) boxStyle = "bg-rose-500 text-white border-rose-400 shadow-md";
+                const isCurrent = p.id === problem.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => router.push(`/round2/editor?problem=${p.id}`)}
+                    className={`w-8 h-8 rounded-lg text-xs font-black transition-all flex items-center justify-center border ${boxStyle} ${
+                      isCurrent ? "ring-2 ring-indigo-300 ring-offset-1 ring-offset-transparent scale-110 bg-indigo-500 border-indigo-300" : ""
+                    }`}
+                    title={`Problem ${p.order_index}: ${p.title}`}
+                  >
+                    {p.order_index}
+                  </button>
+                );
+              })}
             </div>
           )}
 
-          {/* Points */}
-          <div className="px-2 py-1 rounded text-[10px] font-bold bg-white/10 text-amber-300">
-            {problem.points} pts
+          {/* Next Problem */}
+          {allProblems.length > 1 && (() => {
+            const curIdx = allProblems.findIndex(p => p.id === problem.id);
+            const next = curIdx < allProblems.length - 1 ? allProblems[curIdx + 1] : null;
+            return (
+              <button
+                disabled={!next}
+                onClick={() => next && router.push(`/round2/editor?problem=${next.id}`)}
+                className="w-8 h-8 rounded-lg flex items-center justify-center transition-all shrink-0 disabled:opacity-30 hover:bg-white/10 border border-white/20 text-white"
+                title={next ? `Problem ${next.order_index}: ${next.title}` : 'No next problem'}
+              >
+                <ChevronRight size={18} />
+              </button>
+            );
+          })()}
+
+          <div className="w-px h-8 bg-white/15 mx-1" />
+
+          {/* Title + Difficulty */}
+          <div className="flex items-center gap-2 min-w-0">
+            <h1 className="text-sm font-extrabold tracking-tight truncate max-w-[280px] text-white">
+              #{problem.order_index}&nbsp;{problem.title}
+            </h1>
+            <span
+              className="text-[10px] font-black tracking-widest px-2 py-0.5 rounded-full border shrink-0"
+              style={{
+                ...getDifficultyStyle(problem.difficulty),
+                background: "rgba(255,255,255,0.12)",
+                borderColor: "rgba(255,255,255,0.25)",
+                color: problem.difficulty === "Easy" ? "#6ee7b7" : problem.difficulty === "Medium" ? "#fcd34d" : "#fca5a5",
+              }}
+            >
+              {problem.difficulty.toUpperCase()}
+            </span>
+          </div>
+        </div>
+
+        {/* RIGHT: Points + Timer */}
+        <div className="flex items-center gap-3 shrink-0">
+          {/* Points Badge */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-black text-sm tracking-wider shadow-inner border border-amber-400/40"
+            style={{ background: "rgba(245,158,11,0.18)", color: "#fcd34d" }}
+          >
+            <Trophy size={14} />
+            {problem.points} PTS
+          </div>
+
+          {/* Round Timer */}
+          <div
+            className={`flex items-center gap-2 font-mono font-black text-base px-4 py-1.5 rounded-lg border shadow-inner transition-all ${
+              remainingMs <= 300000
+                ? "border-red-400/60 text-red-300 animate-pulse"
+                : "border-white/20 text-white"
+            }`}
+            style={{ background: remainingMs <= 300000 ? "rgba(220,38,38,0.18)" : "rgba(255,255,255,0.08)" }}
+          >
+            <Clock size={16} className={remainingMs <= 300000 ? "text-red-400" : "text-indigo-300"} />
+            <span>
+              {Math.floor(remainingMs / 60000)}:{(Math.floor(remainingMs / 1000) % 60).toString().padStart(2, '0')}
+            </span>
           </div>
         </div>
       </div>

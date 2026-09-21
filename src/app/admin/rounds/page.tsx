@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef } from "react";
-import { Lock, Unlock, AlertTriangle, Loader2, CheckCircle2 } from "lucide-react";
+import { Lock, Unlock, AlertTriangle, Loader2, CheckCircle2, Pencil, X, Check, Clock } from "lucide-react";
 
 interface Round {
   id: number;
@@ -18,6 +18,11 @@ export default function AdminRoundsPage() {
   const [confirmRound, setConfirmRound] = useState<{ round: Round; unlock: boolean } | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "ok" | "err" } | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
+
+  // Duration editing state
+  const [editingDuration, setEditingDuration] = useState<number | null>(null);
+  const [draftDuration, setDraftDuration] = useState<string>("");
+  const [savingDuration, setSavingDuration] = useState<number | null>(null);
 
   useEffect(() => {
     fetch("/api/admin/rounds")
@@ -62,6 +67,40 @@ export default function AdminRoundsPage() {
       );
     } else {
       showToast(data.error || "Failed to update round.", "err");
+    }
+  }
+
+  function startEditDuration(round: Round) {
+    setEditingDuration(round.id);
+    setDraftDuration(String(round.duration_minutes));
+  }
+
+  function cancelEditDuration() {
+    setEditingDuration(null);
+    setDraftDuration("");
+  }
+
+  async function saveDuration(roundId: number) {
+    const mins = parseInt(draftDuration, 10);
+    if (isNaN(mins) || mins < 1 || mins > 360) {
+      showToast("Duration must be between 1 and 360 minutes.", "err");
+      return;
+    }
+    setSavingDuration(roundId);
+    const res = await fetch("/api/admin/rounds", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ roundId, duration_minutes: mins }),
+    });
+    const data = await res.json();
+    setSavingDuration(null);
+
+    if (data.round) {
+      setRounds((prev) => prev.map((r) => (r.id === roundId ? data.round : r)));
+      setEditingDuration(null);
+      showToast(`Round ${roundId} duration updated to ${mins} minutes.`, "ok");
+    } else {
+      showToast(data.error || "Failed to update duration.", "err");
     }
   }
 
@@ -119,7 +158,7 @@ export default function AdminRoundsPage() {
       <div className="mb-8">
         <h1 className="text-2xl font-bold" style={{ color: "var(--color-text-primary)" }}>Round Controls</h1>
         <p className="text-sm mt-1" style={{ color: "var(--color-text-secondary)" }}>
-          Toggle rounds on or off. Unlocking a round instantly pushes a Realtime notification to all eligible participants.
+          Toggle rounds on or off. Edit duration before unlocking. Unlocking a round instantly pushes a Realtime notification to all eligible participants.
         </p>
       </div>
 
@@ -147,9 +186,70 @@ export default function AdminRoundsPage() {
                         <span className={`badge ${round.is_unlocked ? "badge-success" : "badge-warning"}`}>
                           {round.is_unlocked ? "UNLOCKED" : "LOCKED"}
                         </span>
-                        <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
-                          Duration: {round.duration_minutes} min
-                        </span>
+
+                        {/* Duration — editable only when locked */}
+                        <div className="flex items-center gap-1.5">
+                          <Clock size={13} style={{ color: "var(--color-text-tertiary)" }} />
+                          {editingDuration === round.id ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="number"
+                                min={1}
+                                max={360}
+                                value={draftDuration}
+                                onChange={(e) => setDraftDuration(e.target.value)}
+                                className="w-16 px-1.5 py-0.5 text-xs rounded border font-mono"
+                                style={{
+                                  background: "var(--color-surface-2)",
+                                  borderColor: "var(--color-border)",
+                                  color: "var(--color-text-primary)",
+                                }}
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") saveDuration(round.id);
+                                  if (e.key === "Escape") cancelEditDuration();
+                                }}
+                              />
+                              <span className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>min</span>
+                              <button
+                                onClick={() => saveDuration(round.id)}
+                                disabled={savingDuration === round.id}
+                                className="w-6 h-6 rounded flex items-center justify-center hover:opacity-80"
+                                style={{ background: "var(--color-success-bg)", color: "var(--color-success)" }}
+                                title="Save"
+                              >
+                                {savingDuration === round.id
+                                  ? <Loader2 size={12} className="animate-spin" />
+                                  : <Check size={12} />}
+                              </button>
+                              <button
+                                onClick={cancelEditDuration}
+                                className="w-6 h-6 rounded flex items-center justify-center hover:opacity-80"
+                                style={{ background: "var(--color-error-bg)", color: "var(--color-error)" }}
+                                title="Cancel"
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-1">
+                              <span className="text-xs" style={{ color: "var(--color-text-secondary)" }}>
+                                {round.duration_minutes} min
+                              </span>
+                              {!round.is_unlocked && (
+                                <button
+                                  onClick={() => startEditDuration(round)}
+                                  className="w-5 h-5 rounded flex items-center justify-center hover:opacity-80"
+                                  style={{ color: "var(--color-text-tertiary)" }}
+                                  title="Edit duration"
+                                >
+                                  <Pencil size={11} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
                         {round.started_at && (
                           <span className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>
                             Started: {new Date(round.started_at).toLocaleTimeString()}
@@ -164,7 +264,7 @@ export default function AdminRoundsPage() {
 
                   <button
                     className={`btn ${round.is_unlocked ? "btn-danger" : "btn-primary"}`}
-                    disabled={toggling === round.id}
+                    disabled={toggling === round.id || editingDuration === round.id}
                     onClick={() => handleToggle(round, !round.is_unlocked)}>
                     {toggling === round.id ? (
                       <><Loader2 size={16} className="animate-spin" /> Updating…</>
@@ -180,7 +280,7 @@ export default function AdminRoundsPage() {
                 <p className="text-xs" style={{ color: "var(--color-text-tertiary)" }}>
                   {round.id === 1
                     ? "Unlocking this round will immediately notify all registered, non-disqualified teams."
-                    : "Unlocking Round 2 only grants access to teams marked as Shortlisted. Other teams will not be affected."}
+                    : "Unlocking Round 2 only grants access to teams marked as Shortlisted. Edit the duration above before unlocking — once started, the timer cannot be changed."}
                 </p>
               </div>
             ))}

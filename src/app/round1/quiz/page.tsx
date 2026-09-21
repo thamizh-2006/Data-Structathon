@@ -20,6 +20,8 @@ interface Question {
   options: Option[];
   time_limit_seconds: number;
   base_points: number;
+  question_type?: 'single' | 'multi';
+  correct_count?: number;
 }
 
 export default function Round1QuizPage() {
@@ -28,12 +30,13 @@ export default function Round1QuizPage() {
   const [question, setQuestion] = useState<Question | null>(null);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [totalQuestions, setTotalQuestions] = useState(0);
-  const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [selectedOptionIds, setSelectedOptionIds] = useState<string[]>([]);
   const [remainingMs, setRemainingMs] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [userScore, setUserScore] = useState(0);
   const [teamId, setTeamId] = useState("");
   const [violationNotice, setViolationNotice] = useState<string | null>(null);
+  const [questionStatuses, setQuestionStatuses] = useState<string[]>([]);
 
   const timerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -60,7 +63,8 @@ export default function Round1QuizPage() {
         setTotalQuestions(data.totalQuestions);
         setRemainingMs(data.remainingMs || data.question.time_limit_seconds * 1000);
         setUserScore(data.progress?.total_score || 0);
-        setSelectedOptionId(null);
+        setSelectedOptionIds([]);
+        if (data.questionStatuses) setQuestionStatuses(data.questionStatuses);
       }
     } catch (err) {
       console.error("Failed to fetch question", err);
@@ -119,7 +123,7 @@ export default function Round1QuizPage() {
 
   // Submit Answer with feedback animation
   const submitAnswer = useCallback(
-    async (optionId: string | null = selectedOptionId) => {
+    async (optionIds: string[] = selectedOptionIds) => {
       if (submitting || !question) return;
       setSubmitting(true);
 
@@ -129,7 +133,7 @@ export default function Round1QuizPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             question_id: question.id,
-            selected_option_id: optionId,
+            selected_option_ids: optionIds,
           }),
         });
 
@@ -173,7 +177,7 @@ export default function Round1QuizPage() {
         setSubmitting(false);
       }
     },
-    [question, selectedOptionId, submitting, router, fetchCurrentQuestion, triggerSideCelebration, userScore]
+    [question, selectedOptionIds, submitting, router, fetchCurrentQuestion, triggerSideCelebration, userScore]
   );
 
 
@@ -187,7 +191,7 @@ export default function Round1QuizPage() {
         if (prev <= 1000) {
           clearInterval(timerRef.current!);
           // Time expired — auto-submit null/current answer
-          submitAnswer(selectedOptionId);
+          submitAnswer(selectedOptionIds);
           return 0;
         }
         return prev - 1000;
@@ -197,7 +201,7 @@ export default function Round1QuizPage() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [question, submitAnswer, selectedOptionId]);
+  }, [question, submitAnswer, selectedOptionIds]);
 
   function handleViolation(type: string, severity: string) {
     setViolationNotice(`Integrity Alert: ${type.replace(/_/g, " ")} detected (${severity})`);
@@ -297,36 +301,92 @@ export default function Round1QuizPage() {
         </div>
       )}
 
-      {/* Top Bar: Progress & Timer */}
-      <div className="flex items-center justify-between pb-3 border-b" style={{ borderColor: "var(--color-border)" }}>
-        <div className="flex items-center gap-4">
-          <span className="text-xs font-bold" style={{ color: "var(--color-text-tertiary)" }}>
-            Q {questionIndex + 1} <span style={{ color: "var(--color-text-tertiary)" }}>/ {totalQuestions}</span>
-          </span>
-          <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--color-text-secondary)" }}>
-            <Zap size={12} style={{ color: "var(--color-accent)" }} />
-            <span className="font-bold" style={{ color: "var(--color-text-primary)" }}>{userScore} pts</span>
-          </div>
-        </div>
-
-        {/* Timer */}
-        <div className="flex items-center gap-2">
-          <Clock size={14} style={{ color: secondsRemaining <= 5 ? "var(--color-error)" : "var(--color-text-tertiary)" }} />
-          <span
-            className="font-mono text-sm font-bold"
-            style={{ color: secondsRemaining <= 5 ? "var(--color-error)" : "var(--color-text-primary)" }}
-          >
-            {secondsRemaining}s
-          </span>
-        </div>
+      {/* Status Bar */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-2 border-b" style={{ borderColor: "var(--color-border)" }}>
+        {questionStatuses.map((status, i) => {
+          let bg = "#e2e8f0";
+          let textColor = "#334155";
+          let border = "1px solid #cbd5e1";
+          if (status === "correct") {
+            bg = "#16a34a";
+            textColor = "#ffffff";
+            border = "1px solid #15803d";
+          } else if (status === "incorrect") {
+            bg = "#dc2626";
+            textColor = "#ffffff";
+            border = "1px solid #b91c1c";
+          } else if (status === "partial") {
+            bg = "#ca8a04";
+            textColor = "#ffffff";
+            border = "1px solid #a16207";
+          }
+          const isCurrent = i === questionIndex;
+          return (
+            <div
+              key={i}
+              className={`w-9 h-9 shrink-0 rounded-lg flex items-center justify-center text-xs font-black shadow-sm transition-all ${isCurrent ? 'ring-2 ring-offset-2 ring-indigo-600 scale-105' : 'opacity-90'}`}
+              style={{ background: bg, color: textColor, border }}
+            >
+              {i + 1}
+            </div>
+          );
+        })}
       </div>
 
-      {/* Timer Progress Bar */}
-      <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: "var(--color-surface-2)" }}>
-        <div
-          className="h-full transition-all duration-1000 ease-linear"
-          style={{ width: `${timerPercentage}%`, background: secondsRemaining <= 5 ? "var(--color-error)" : "var(--color-accent)" }}
-        />
+      {/* Top Bar: Progress & Big Circular Timer */}
+      <div className="flex items-center justify-between py-2 border-b" style={{ borderColor: "var(--color-border)" }}>
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-extrabold" style={{ color: "var(--color-text-primary)" }}>
+            Question {questionIndex + 1} <span style={{ color: "var(--color-text-tertiary)" }}>/ {totalQuestions}</span>
+          </span>
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border" style={{ background: "var(--color-surface)", borderColor: "var(--color-border)" }}>
+            <Zap size={13} style={{ color: "var(--color-accent)" }} />
+            <span style={{ color: "var(--color-text-primary)" }}>{userScore} pts</span>
+          </div>
+          {question.question_type === 'multi' && (
+            <span className="text-xs px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">
+              Select {question.correct_count || 1} option{(question.correct_count || 1) > 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+
+        {/* Big Circular Timer on Top Right */}
+        <div className="relative flex items-center justify-center">
+          <svg className="w-16 h-16 transform -rotate-90">
+            <circle
+              cx="32"
+              cy="32"
+              r="26"
+              stroke="currentColor"
+              strokeWidth="5"
+              fill="transparent"
+              className="text-slate-200 dark:text-slate-700"
+            />
+            <circle
+              cx="32"
+              cy="32"
+              r="26"
+              stroke="currentColor"
+              strokeWidth="5"
+              fill="transparent"
+              strokeDasharray={2 * Math.PI * 26}
+              strokeDashoffset={2 * Math.PI * 26 * (1 - timerPercentage / 100)}
+              className={`transition-all duration-1000 ease-linear ${
+                secondsRemaining <= 5 ? "text-red-500 animate-pulse" : "text-indigo-600"
+              }`}
+            />
+          </svg>
+          <div className="absolute flex flex-col items-center justify-center">
+            <span
+              className={`font-mono text-base font-black leading-none ${
+                secondsRemaining <= 5 ? "text-red-600 animate-pulse" : "text-slate-800 dark:text-slate-100"
+              }`}
+            >
+              {secondsRemaining}
+            </span>
+            <span className="text-[9px] font-bold text-slate-400 uppercase">sec</span>
+          </div>
+        </div>
       </div>
 
       {/* Question */}
@@ -342,12 +402,29 @@ export default function Round1QuizPage() {
       {/* Options */}
       <div className="space-y-2">
         {question.options?.map((opt, i) => {
-          const isSelected = selectedOptionId === opt.id;
+          const isSelected = selectedOptionIds.includes(opt.id);
+          const isMulti = question.question_type === 'multi';
+          const maxAllowed = question.correct_count || 1;
+
           return (
             <button
               key={opt.id}
               disabled={submitting}
-              onClick={() => setSelectedOptionId(opt.id)}
+              onClick={() => {
+                if (isMulti) {
+                  setSelectedOptionIds((prev) => {
+                    if (prev.includes(opt.id)) {
+                      return prev.filter((id) => id !== opt.id);
+                    }
+                    if (prev.length >= maxAllowed) {
+                      return prev; // Block selecting more than allowed
+                    }
+                    return [...prev, opt.id];
+                  });
+                } else {
+                  setSelectedOptionIds([opt.id]);
+                }
+              }}
               className="w-full text-left p-4 rounded-xl border transition-all flex items-center gap-4"
               style={{
                 background: isSelected ? "var(--color-accent-light)" : "var(--color-surface)",
@@ -367,10 +444,10 @@ export default function Round1QuizPage() {
                 {opt.option_text}
               </span>
               <div
-                className="ml-auto w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors"
+                className={`ml-auto flex items-center justify-center shrink-0 transition-colors ${isMulti ? 'w-5 h-5 rounded' : 'w-4 h-4 rounded-full'} border-2`}
                 style={{ borderColor: isSelected ? "var(--color-accent)" : "var(--color-border)" }}
               >
-                {isSelected && <div className="w-2 h-2 rounded-full" style={{ background: "var(--color-accent)" }} />}
+                {isSelected && <div className={isMulti ? "w-3 h-3 rounded-sm" : "w-2 h-2 rounded-full"} style={{ background: "var(--color-accent)" }} />}
               </div>
             </button>
           );
@@ -386,7 +463,7 @@ export default function Round1QuizPage() {
 
         <button
           onClick={() => submitAnswer()}
-          disabled={!selectedOptionId || submitting}
+          disabled={selectedOptionIds.length === 0 || submitting}
           className="btn btn-primary px-7 py-2.5 text-sm font-bold flex items-center gap-2 shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {submitting ? (

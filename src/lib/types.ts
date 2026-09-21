@@ -51,6 +51,7 @@ export interface Round1Question {
   base_points: number;
   order_index: number;
   is_published: boolean;
+  question_type?: 'single' | 'multi';
   created_at: string;
   options?: Round1Option[];
 }
@@ -73,6 +74,7 @@ export interface Round1Progress {
   incorrect_count: number;
   total_time_ms: number;
   is_completed: boolean;
+  question_order?: string[] | null;
   started_at: string;
   completed_at?: string | null;
 }
@@ -81,7 +83,7 @@ export interface Round1Submission {
   id: string;
   team_id: string;
   question_id: string;
-  selected_option_id: string | null;
+  selected_option_ids: string[] | null;
   is_correct: boolean;
   response_time_ms: number;
   points_awarded: number;

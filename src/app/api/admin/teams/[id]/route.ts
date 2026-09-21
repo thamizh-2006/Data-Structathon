@@ -26,9 +26,30 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
   const { id } = await ctx.params;
   const team = await getTeamById(id);
   if (!team) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const {
+    getRound1Progress,
+    getTeamRound1Submissions,
+    getRound2SubmissionsByTeam,
+    getViolationsByTeam,
+  } = await import("@/lib/store");
+
+  const [r1Progress, r1Submissions, r2Submissions, violations] = await Promise.all([
+    getRound1Progress(id),
+    getTeamRound1Submissions(id),
+    getRound2SubmissionsByTeam(id),
+    getViolationsByTeam(id),
+  ]);
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { password_hash, ...safe } = team as any;
-  return NextResponse.json({ team: safe });
+  return NextResponse.json({
+    team: safe,
+    r1Progress,
+    r1Submissions,
+    r2Submissions,
+    violations,
+  });
 }
 
 export async function PATCH(req: NextRequest, ctx: RouteContext) {

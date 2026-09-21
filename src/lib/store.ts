@@ -32,10 +32,11 @@ interface DatabaseState {
   round1Submissions: Array<{
     team_id: string;
     question_id: string;
-    selected_option_id: string | null;
+    selected_option_ids: string[] | null;
     is_correct: boolean;
     response_time_ms: number;
     points_awarded: number;
+    submitted_at: string;
   }>;
   round2Problems: Round2Problem[];
   round2TestCases: Round2TestCase[];
@@ -554,6 +555,17 @@ export async function toggleRoundLock(
   return { ...round };
 }
 
+export async function updateRoundDuration(
+  roundId: number,
+  durationMinutes: number
+): Promise<Round | null> {
+  const round = memoryDb.rounds.find((r) => r.id === roundId);
+  if (!round) return null;
+  round.duration_minutes = durationMinutes;
+  round.updated_at = new Date().toISOString();
+  return { ...round };
+}
+
 // =============================================================================
 // ROUND 1: QUESTIONS & SUBMISSIONS
 // =============================================================================
@@ -618,6 +630,15 @@ export async function deleteRound1Question(id: string): Promise<boolean> {
 
 export async function getRound1Progress(teamId: string): Promise<Round1Progress> {
   if (!memoryDb.round1Progress[teamId]) {
+    const publishedQuestions = memoryDb.round1Questions.filter((q) => q.is_published);
+    const questionIds = publishedQuestions.map((q) => q.id);
+    
+    // Fisher-Yates shuffle
+    for (let i = questionIds.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [questionIds[i], questionIds[j]] = [questionIds[j], questionIds[i]];
+    }
+
     memoryDb.round1Progress[teamId] = {
       id: `r1p_${teamId}`,
       team_id: teamId,
@@ -628,6 +649,7 @@ export async function getRound1Progress(teamId: string): Promise<Round1Progress>
       incorrect_count: 0,
       total_time_ms: 0,
       is_completed: false,
+      question_order: questionIds,
       started_at: new Date().toISOString(),
     };
   }
@@ -637,7 +659,7 @@ export async function getRound1Progress(teamId: string): Promise<Round1Progress>
 export async function submitRound1Answer(params: {
   team_id: string;
   question_id: string;
-  selected_option_id: string | null;
+  selected_option_ids: string[] | null;
 }): Promise<{
   progress: Round1Progress;
   isCorrect: boolean;
@@ -664,14 +686,18 @@ export async function submitRound1Answer(params: {
   let isCorrect = false;
   let pointsEarned = 0;
 
-  if (params.selected_option_id) {
-    const selected = currentQ.options?.find((o) => o.id === params.selected_option_id);
-    if (selected && selected.is_correct) {
-      isCorrect = true;
-      // Formula: 50% base + 50% * (remaining time / total time)
+  if (params.selected_option_ids && params.selected_option_ids.length > 0) {
+    const correctOptions = currentQ.options?.filter((o) => o.is_correct).map((o) => o.id) || [];
+    const selectedCorrect = params.selected_option_ids.filter((id) => correctOptions.includes(id));
+    
+    if (selectedCorrect.length > 0) {
+      isCorrect = selectedCorrect.length === correctOptions.length && params.selected_option_ids.length === correctOptions.length;
+      
       const remainingMs = Math.max(0, limitMs - elapsedMs);
       const timeRatio = limitMs > 0 ? remainingMs / limitMs : 0;
-      pointsEarned = Math.round(currentQ.base_points * (0.5 + 0.5 * timeRatio));
+      const maxPoints = Math.round(currentQ.base_points * (0.5 + 0.5 * timeRatio));
+      
+      pointsEarned = Math.round((selectedCorrect.length / correctOptions.length) * maxPoints);
     }
   }
 
@@ -688,15 +714,16 @@ export async function submitRound1Answer(params: {
   memoryDb.round1Submissions.push({
     team_id: params.team_id,
     question_id: params.question_id,
-    selected_option_id: params.selected_option_id,
+    selected_option_ids: params.selected_option_ids,
     is_correct: isCorrect,
     response_time_ms: elapsedMs,
     points_awarded: pointsEarned,
+    submitted_at: new Date().toISOString(),
   });
 
   // Advance index
   progress.current_question_index += 1;
-  if (progress.current_question_index >= questions.length) {
+  if (progress.current_question_index >= (progress.question_order?.length || questions.length)) {
     progress.is_completed = true;
     progress.completed_at = new Date().toISOString();
   } else {

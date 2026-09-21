@@ -95,6 +95,7 @@ CREATE TABLE IF NOT EXISTS round1_questions (
     base_points INT NOT NULL DEFAULT 1000,
     order_index INT NOT NULL DEFAULT 0,
     is_published BOOLEAN NOT NULL DEFAULT FALSE,
+    question_type VARCHAR(10) NOT NULL DEFAULT 'single' CHECK (question_type IN ('single', 'multi')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -124,6 +125,7 @@ CREATE TABLE IF NOT EXISTS round1_progress (
     incorrect_count INT NOT NULL DEFAULT 0,
     total_time_ms BIGINT NOT NULL DEFAULT 0,
     is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+    question_order JSONB,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ
 );
@@ -134,7 +136,7 @@ CREATE TABLE IF NOT EXISTS round1_submissions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
     question_id UUID NOT NULL REFERENCES round1_questions(id) ON DELETE CASCADE,
-    selected_option_id UUID REFERENCES round1_options(id),
+    selected_option_ids JSONB,
     is_correct BOOLEAN NOT NULL DEFAULT FALSE,
     response_time_ms INT NOT NULL DEFAULT 0,
     points_awarded INT NOT NULL DEFAULT 0,

@@ -19,8 +19,23 @@ export async function GET() {
   }
 
   const progress = await getRound1Progress(user.teamId);
-  const questions = await getPublishedRound1Questions();
+  const rawQuestions = await getPublishedRound1Questions();
   const submissions = await getTeamRound1Submissions(user.teamId);
+
+  // Order questions according to progress.question_order
+  let questions = rawQuestions;
+  if (progress?.is_completed) {
+    const allQuestionsAdmin = await import("@/lib/store").then(m => m.getAllRound1QuestionsAdmin());
+    questions = allQuestionsAdmin.filter(q => q.is_published);
+  }
+
+  if (progress?.question_order && Array.isArray(progress.question_order)) {
+    const qMap = new Map(questions.map((q) => [q.id, q]));
+    const ordered = progress.question_order.map((id: string) => qMap.get(id)).filter(Boolean);
+    if (ordered.length === questions.length) {
+      questions = ordered as typeof questions;
+    }
+  }
 
   return NextResponse.json({
     progress,

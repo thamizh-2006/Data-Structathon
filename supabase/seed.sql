@@ -41,6 +41,7 @@ INSERT INTO teams (
     'Liam O''Connor',
     NULL,
     FALSE,
+    FALSE,
     'sent'
 ),
 (

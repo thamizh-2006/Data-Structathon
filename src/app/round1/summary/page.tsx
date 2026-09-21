@@ -203,17 +203,45 @@ export default function Round1SummaryPage() {
               
               <div className="pl-11 space-y-2">
                 {q.options?.map((opt: any) => {
-                  const isSelected = sub?.selected_option_id === opt.id;
-                  // If we need to show the correct answer regardless, we would need the backend to supply it. 
-                  // Wait, the API strips `is_correct` from the options sent to the client!
-                  // I should just highlight the selected answer for now, and maybe the correct one if the API can provide it.
+                  const selectedIds: string[] = sub?.selected_option_ids || (sub?.selected_option_id ? [sub.selected_option_id] : []);
+                  const isSelected = selectedIds.includes(opt.id);
+                  const isCorrectOption = Boolean(opt.is_correct);
+
+                  let itemStyle = "bg-white border-slate-200 text-slate-600";
+                  let label = null;
+
+                  if (isCorrectOption) {
+                    itemStyle = "bg-emerald-50 border-emerald-300 text-emerald-900 font-semibold shadow-sm";
+                    label = (
+                      <span className="text-xs font-bold uppercase text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
+                        {isSelected ? "Your Answer (Correct)" : "Correct Answer"}
+                      </span>
+                    );
+                  } else if (isSelected) {
+                    itemStyle = "bg-red-50 border-red-300 text-red-900 font-semibold shadow-sm";
+                    label = (
+                      <span className="text-xs font-bold uppercase text-red-700 bg-red-100 px-2 py-0.5 rounded">
+                        Your Answer (Incorrect)
+                      </span>
+                    );
+                  }
+
                   return (
                     <div 
                       key={opt.id} 
-                      className={`p-3 rounded-lg border text-sm flex justify-between items-center ${isSelected ? (sub.is_correct ? 'bg-emerald-50 border-emerald-200 text-emerald-900 font-medium' : 'bg-red-50 border-red-200 text-red-900 font-medium') : 'bg-white border-slate-200 text-slate-600'}`}
+                      className={`p-3 rounded-lg border text-sm flex justify-between items-center transition-all ${itemStyle}`}
                     >
-                      <span>{opt.option_text}</span>
-                      {isSelected && <span className="text-xs font-bold uppercase">{sub.is_correct ? 'Your Answer (Correct)' : 'Your Answer'}</span>}
+                      <div className="flex items-center gap-2">
+                        {isCorrectOption ? (
+                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                        ) : isSelected ? (
+                          <XCircle size={16} className="text-red-600 shrink-0" />
+                        ) : (
+                          <div className="w-4 h-4 rounded-full border border-slate-300 shrink-0" />
+                        )}
+                        <span>{opt.option_text}</span>
+                      </div>
+                      {label}
                     </div>
                   );
                 })}
